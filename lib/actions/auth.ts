@@ -4,7 +4,7 @@ import PrismaClientManager from "../pgConnect";
 import bcrypt from "bcryptjs";
 import { statusCodes } from "@/app/types/statusCodes";
 
-const secretKey = process.env.JWT_SECRET_KEY || "";
+const secretKey = process.env.JWT_SECRET_KEY || "bob";
 const prisma = PrismaClientManager.getInstance().getPrismaClient();
 
 export const checkAuthentication = async (token: string): Promise<boolean> => {
@@ -46,6 +46,7 @@ export const login = async (
     const token = jwt.sign(
       {
         email: user?.email,
+        //consider adding organisation and role
       },
       secretKey
     );
@@ -109,3 +110,65 @@ export const register = async (
     };
   }
 };
+
+//the following section defines the functions to recieve and verify the positions of users.
+
+
+//This is the return type of the fuction
+export type User={
+  id:number,
+  name:string|null,
+  organisation:string | null,
+  role:string | null,
+  department:string| null
+}
+
+
+//pass the jwtToken of the user that you want to get the position of.
+export async function getPosition(JWTtoken:string):Promise<{status:number,user:User|null}> {
+  try{
+    //getting user id from token
+    const jwtParsed=jwt.decode(JWTtoken) as jwt.JwtPayload;
+    const userId=jwtParsed.id;
+    const userEmail=jwtParsed.email;
+    //find user info from DB using id
+    try{
+      const user=await prisma.user.findUnique({where:{id:userId}});
+      if(user && user.email==userEmail){
+        //successfull match,and has permission return values
+        if(user.hasAccess){
+          const retVal={
+            id:user.id,
+            name:user.name,
+            organisation:user.organisation,
+            role:user.role,
+            department:user.department
+          };
+          return {
+            status:statusCodes.OK,
+            user:retVal
+          };
+        }
+        else{
+          return{
+            //not authorised
+            status:statusCodes.UNAUTHORIZED,
+            user:null
+          }
+        }
+      }
+      else{
+        //illegal request
+        return {status:statusCodes.BAD_REQUEST,user:null}
+      }
+    }
+    catch{
+      //if the user isnt found
+      return {status:statusCodes.NOT_FOUND, user:null}
+    }
+  }
+  catch{
+    //server error ig
+    return {status:statusCodes.INTERNAL_SERVER_ERROR, user:null}
+  }
+}
